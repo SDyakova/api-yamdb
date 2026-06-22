@@ -7,7 +7,6 @@ from rest_framework import filters, permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import AccessToken
-
 from reviews.models import Category, Genre, Review, Title
 
 from .permissions import IsAdmin, IsAdminOrReadOnly, IsAuthorOrModeratorOrAdmin
@@ -164,10 +163,10 @@ class TitleViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(category__slug=category_slug)
         if name:
             queryset = queryset.filter(name__icontains=name)
-        if year:
-            queryset = queryset.filter(year=year)
+        if year and year.isdigit():
+            queryset = queryset.filter(year=int(year))
 
-        return queryset
+        return queryset.distinct()
 
     def get_serializer_class(self):
         if self.action in ("list", "retrieve"):
