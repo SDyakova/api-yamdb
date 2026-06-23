@@ -19,9 +19,15 @@ class GenreAdmin(admin.ModelAdmin):
 
 @admin.register(Title)
 class TitleAdmin(admin.ModelAdmin):
-    list_display = ("name", "year", "category")
+    list_display = ("name", "year", "category", "genre_list")
+    list_editable = ("category",)
     search_fields = ("name",)
     list_filter = ("category", "genre")
+
+    def genre_list(self, obj):
+        return ", ".join(g.name for g in obj.genre.all())
+
+    genre_list.short_description = "Жанры"
 
 
 @admin.register(Review)

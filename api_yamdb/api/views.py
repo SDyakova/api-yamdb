@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
@@ -7,6 +8,7 @@ from rest_framework import filters, permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import AccessToken
+
 from reviews.models import Category, Genre, Review, Title
 
 from .permissions import IsAdmin, IsAdminOrReadOnly, IsAuthorOrModeratorOrAdmin
@@ -16,10 +18,8 @@ from .serializers import (
     GenreSerializer,
     ReviewSerializer,
     SignupSerializer,
-    TitleReadSerializer,
     TitleSerializer,
     TokenSerializer,
-    UserMeSerializer,
     UserSerializer,
 )
 
@@ -58,7 +58,7 @@ def signup(request):
     send_mail(
         "Код подтверждения YaMDb",
         f"Ваш код подтверждения: {confirmation_code}",
-        "from@example.com",
+        settings.EMAIL_FROM,
         [email],
         fail_silently=False,
     )
@@ -103,42 +103,36 @@ class UserViewSet(viewsets.ModelViewSet):
     )
     def me(self, request):
         if request.method == "GET":
-            serializer = UserMeSerializer(request.user)
+            serializer = UserSerializer(request.user)
             return Response(serializer.data)
-        serializer = UserMeSerializer(
+        serializer = UserSerializer(
             request.user, data=request.data, partial=True
         )
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        serializer.save(role=request.user.role)
         return Response(serializer.data)
 
 
-class CategoryViewSet(
+class CreateListDestroyViewSet(
     viewsets.mixins.CreateModelMixin,
     viewsets.mixins.ListModelMixin,
     viewsets.mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
+    permission_classes = (IsAdminOrReadOnly,)
+    filter_backends = (filters.SearchFilter,)
+    search_fields = ("name",)
+    lookup_field = "slug"
+
+
+class CategoryViewSet(CreateListDestroyViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = (IsAdminOrReadOnly,)
-    filter_backends = (filters.SearchFilter,)
-    search_fields = ("name",)
-    lookup_field = "slug"
 
 
-class GenreViewSet(
-    viewsets.mixins.CreateModelMixin,
-    viewsets.mixins.ListModelMixin,
-    viewsets.mixins.DestroyModelMixin,
-    viewsets.GenericViewSet,
-):
+class GenreViewSet(CreateListDestroyViewSet):
     queryset = Genre.objects.all()
     serializer_class = GenreSerializer
-    permission_classes = (IsAdminOrReadOnly,)
-    filter_backends = (filters.SearchFilter,)
-    search_fields = ("name",)
-    lookup_field = "slug"
 
 
 class TitleViewSet(viewsets.ModelViewSet):
@@ -169,7 +163,9 @@ class TitleViewSet(viewsets.ModelViewSet):
         return queryset.distinct()
 
     def get_serializer_class(self):
-        if self.action in ("list", "retrieve"):
+        if self.request.method in permissions.SAFE_METHODS:
+            from .serializers import TitleReadSerializer
+
             return TitleReadSerializer
         return TitleSerializer
 
@@ -182,13 +178,14 @@ class ReviewViewSet(viewsets.ModelViewSet):
     )
     http_method_names = ["get", "post", "patch", "delete"]
 
+    def get_title(self):
+        return get_object_or_404(Title, pk=self.kwargs.get("title_id"))
+
     def get_queryset(self):
-        title = get_object_or_404(Title, pk=self.kwargs.get("title_id"))
-        return title.reviews.all()
+        return self.get_title().reviews.all()
 
     def perform_create(self, serializer):
-        title = get_object_or_404(Title, pk=self.kwargs.get("title_id"))
-        serializer.save(author=self.request.user, title=title)
+        serializer.save(author=self.request.user, title=self.get_title())
 
 
 class CommentViewSet(viewsets.ModelViewSet):
@@ -199,18 +196,15 @@ class CommentViewSet(viewsets.ModelViewSet):
     )
     http_method_names = ["get", "post", "patch", "delete"]
 
-    def get_queryset(self):
-        review = get_object_or_404(
+    def get_review(self):
+        return get_object_or_404(
             Review,
             pk=self.kwargs.get("review_id"),
             title_id=self.kwargs.get("title_id"),
         )
-        return review.comments.all()
+
+    def get_queryset(self):
+        return self.get_review().comments.all()
 
     def perform_create(self, serializer):
-        review = get_object_or_404(
-            Review,
-            pk=self.kwargs.get("review_id"),
-            title_id=self.kwargs.get("title_id"),
-        )
-        serializer.save(author=self.request.user, review=review)
+        serializer.save(author=self.request.user, review=self.get_review())

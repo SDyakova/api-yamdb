@@ -77,7 +77,9 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-LANGUAGE_CODE = "en-us"
+LANGUAGE_CODE = "ru-RU"
+
+EMAIL_FROM = "from@example.com"
 
 TIME_ZONE = "UTC"
 
