@@ -1,6 +1,9 @@
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.core.validators import RegexValidator
 from django.db import models
+
+from reviews.constants import MAX_LENGTH_USERNAME
 
 
 class User(AbstractUser):
@@ -25,13 +28,24 @@ class User(AbstractUser):
     )
     username = models.CharField(
         "username",
-        max_length=150,
+        max_length=MAX_LENGTH_USERNAME,
         unique=True,
-        validators=[username_validator],
+        validators=[
+            username_validator,
+            RegexValidator(
+                regex=r"^[\w.@+-]+\Z",
+                message="Недопустимые символы в username.",
+            ),
+        ],
     )
 
     class Meta:
         ordering = ["username"]
+        verbose_name = "Пользователь"
+        verbose_name_plural = "Пользователи"
+
+    def __str__(self):
+        return self.username
 
     @property
     def is_admin(self):

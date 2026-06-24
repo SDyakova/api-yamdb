@@ -2,13 +2,8 @@ from django.contrib.auth import get_user_model
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
-from .constants import (
-    MAX_LENGTH_NAME,
-    MAX_LENGTH_SLUG,
-    MAX_SCORE,
-    MIN_SCORE,
-    TEXT_LIMIT,
-)
+from .constants import (CURRENT_YEAR, MAX_LENGTH_NAME, MAX_LENGTH_SLUG,
+                        MAX_SCORE, MIN_SCORE, TEXT_LIMIT)
 
 User = get_user_model()
 
@@ -39,7 +34,10 @@ class Genre(NameSlugBase):
 
 class Title(models.Model):
     name = models.CharField("Название", max_length=MAX_LENGTH_NAME)
-    year = models.PositiveSmallIntegerField("Год выпуска")
+    year = models.PositiveSmallIntegerField(
+        "Год выпуска",
+        validators=[MaxValueValidator(CURRENT_YEAR)],
+    )
     description = models.TextField("Описание", blank=True)
     genre = models.ManyToManyField(
         Genre, related_name="titles", verbose_name="Жанр"
@@ -71,6 +69,7 @@ class ReviewCommentBase(models.Model):
     class Meta:
         abstract = True
         ordering = ["-pub_date"]
+        default_related_name = "%(class)s"
 
     def __str__(self):
         return f"{self.author.username}: {self.text[:TEXT_LIMIT]}"

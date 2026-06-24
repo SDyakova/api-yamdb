@@ -4,20 +4,26 @@ from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.db.models import Avg
 from django.shortcuts import get_object_or_404
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import AccessToken
-
 from reviews.models import Category, Genre, Review, Title
 
-from .permissions import IsAdmin, IsAdminOrReadOnly, IsAuthorOrModeratorOrAdmin
-from .serializers import (
+from api.filters import TitleFilter
+from api.permissions import (
+    IsAdmin,
+    IsAdminOrReadOnly,
+    IsAuthorOrModeratorOrAdmin,
+)
+from api.serializers import (
     CategorySerializer,
     CommentSerializer,
     GenreSerializer,
     ReviewSerializer,
     SignupSerializer,
+    TitleReadSerializer,
     TitleSerializer,
     TokenSerializer,
     UserSerializer,
@@ -31,35 +37,14 @@ User = get_user_model()
 def signup(request):
     serializer = SignupSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    email = serializer.validated_data["email"]
-    username = serializer.validated_data["username"]
-
-    try:
-        user = User.objects.get(username=username, email=email)
-    except User.DoesNotExist:
-        if User.objects.filter(email=email).exists():
-            return Response(
-                {"email": ["Пользователь с таким email уже существует."]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if User.objects.filter(username=username).exists():
-            return Response(
-                {
-                    "username": [
-                        "Пользователь с таким username уже существует."
-                    ]
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        User.objects.create_user(username=username, email=email)
-        user = User.objects.get(username=username, email=email)
+    user = serializer.save()
 
     confirmation_code = default_token_generator.make_token(user)
     send_mail(
         "Код подтверждения YaMDb",
         f"Ваш код подтверждения: {confirmation_code}",
         settings.EMAIL_FROM,
-        [email],
+        [user.email],
         fail_silently=False,
     )
 
@@ -71,12 +56,14 @@ def signup(request):
 def token(request):
     serializer = TokenSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    username = serializer.validated_data["username"]
-    confirmation_code = serializer.validated_data["confirmation_code"]
-
-    user = get_object_or_404(User, username=username)
-
-    if not default_token_generator.check_token(user, confirmation_code):
+    user = serializer.validated_data.get("user")
+    if not user:
+        username = request.data.get("username")
+        if not User.objects.filter(username=username).exists():
+            return Response(
+                {"detail": "Пользователь не найден."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         return Response(
             {"detail": "Неверный код подтверждения."},
             status=status.HTTP_400_BAD_REQUEST,
@@ -141,31 +128,11 @@ class TitleViewSet(viewsets.ModelViewSet):
     )
     permission_classes = (IsAdminOrReadOnly,)
     http_method_names = ["get", "post", "patch", "delete"]
-
-    def get_queryset(self):
-        queryset = Title.objects.annotate(
-            rating=Avg("reviews__score")
-        ).order_by("id")
-        genre_slug = self.request.query_params.get("genre")
-        category_slug = self.request.query_params.get("category")
-        name = self.request.query_params.get("name")
-        year = self.request.query_params.get("year")
-
-        if genre_slug:
-            queryset = queryset.filter(genre__slug=genre_slug)
-        if category_slug:
-            queryset = queryset.filter(category__slug=category_slug)
-        if name:
-            queryset = queryset.filter(name__icontains=name)
-        if year and year.isdigit():
-            queryset = queryset.filter(year=int(year))
-
-        return queryset.distinct()
+    filter_backends = (DjangoFilterBackend,)
+    filterset_class = TitleFilter
 
     def get_serializer_class(self):
         if self.request.method in permissions.SAFE_METHODS:
-            from .serializers import TitleReadSerializer
-
             return TitleReadSerializer
         return TitleSerializer
 
